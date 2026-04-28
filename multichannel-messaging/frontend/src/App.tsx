@@ -69,7 +69,19 @@ export default function App() {
       });
     });
 
-    return () => { socket.off('new_message'); };
+    socket.on('status_changed', (data: { conversationId: string; status: string }) => {
+      setConversations(prev => prev.map(c =>
+        c.id === data.conversationId ? { ...c, status: data.status } : c
+      ));
+      setSelected((sel: any) =>
+        sel?.id === data.conversationId ? { ...sel, status: data.status } : sel
+      );
+    });
+
+    return () => {
+      socket.off('new_message');
+      socket.off('status_changed');
+    };
   }, []);
 
   useEffect(() => {
@@ -232,7 +244,7 @@ export default function App() {
 
               {/* Status buttons */}
               <div style={{ display: 'flex', gap: 6 }}>
-                {['open', 'resolved'].map(s => (
+                {['bot', 'open', 'resolved'].map(s => (
                   <button
                     key={s}
                     onClick={() => changeStatus(s)}

@@ -6,6 +6,7 @@ dotenv.config();
 
 import { testConnection } from './db/connection';
 import { initSocket } from './realtime/socket';
+import { startScheduler } from './scheduler';
 import { messengerRouter } from './webhooks/messenger';
 import { instagramRouter } from './webhooks/instagram';
 import { whatsappRouter } from './webhooks/whatsapp';
@@ -57,6 +58,7 @@ const PORT = parseInt(process.env.PORT || '3000');
 async function main() {
   await testConnection();
   initSocket(server);
+  startScheduler();
   server.listen(PORT, () => {
     const base = process.env.WEBHOOK_BASE_URL || `http://localhost:${PORT}`;
     console.log(`\n🚀 Server: http://localhost:${PORT}`);
