@@ -18,7 +18,9 @@ const app    = express();
 const server = http.createServer(app);
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => { req.rawBody = buf; }
+}));
 
 // Webhooks
 app.use('/webhook/messenger', messengerRouter);

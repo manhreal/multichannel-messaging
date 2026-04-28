@@ -9,7 +9,7 @@ Hệ thống inbox hợp nhất nhận và trả lời tin nhắn từ **Faceboo
 | Layer | Tech |
 |-------|------|
 | Backend | Node.js 18+, TypeScript, Express 4, tsx (dev runner) |
-| Database | MySQL 8 via XAMPP, driver `mysql2/promise` |
+| Database | MySQL 8, driver `mysql2/promise` |
 | Realtime | Socket.IO 4 (server ↔ frontend agent) |
 | Frontend | React 18, Vite 5, TypeScript, axios, socket.io-client |
 | Tunnel (dev) | ngrok (expose localhost ra internet cho Meta webhook) |
@@ -30,7 +30,7 @@ multichannel-messaging/
 │   │   ├── db/
 │   │   │   ├── connection.ts     # mysql2 pool singleton + testConnection()
 │   │   │   └── migrations/
-│   │   │       └── 001_init.sql  # Schema + seed data (chạy 1 lần trong Workbench)
+│   │   │       └── 001_init.sql  # Schema + seed data
 │   │   ├── normalizer/
 │   │   │   └── index.ts          # UnifiedMessage interface + 3 normalize functions
 │   │   ├── webhooks/
@@ -51,6 +51,8 @@ multichannel-messaging/
 │   │   │   ├── conversations.ts  # CRUD conversations + POST reply endpoint
 │   │   │   ├── messages.ts       # GET messages của 1 conversation
 │   │   │   └── agents.ts         # GET danh sách agents
+│   │   ├── scheduler/
+│   │   │   └── index.ts          # startScheduler(): auto-revert conversation về bot sau 24h không hoạt động
 │   │   └── realtime/
 │   │       └── socket.ts         # initSocket(), notifyAgents()
 │   ├── .env                      # Secret — KHÔNG commit
@@ -187,7 +189,8 @@ Khi thêm kênh mới: implement `normalizeX()` trả về `UnifiedMessage | nul
 
 | Event | Payload | Khi nào |
 |-------|---------|---------|
-| `new_message` | `{ conversation, message }` | Mỗi khi có tin mới (inbound hoặc outbound) |
+| `new_message` | `{ conversation, message }` | Mỗi khi có tin mới (inbound hoặc outbound — kể cả bot reply) |
+| `status_changed` | `{ conversationId, status }` | Bot match keyword 'agent', agent đổi status, assign agent |
 
 Socket server cho phép CORS từ `localhost:3301` và `localhost:3001`.
 
@@ -202,7 +205,7 @@ File: `backend/.env` (dựa theo `backend/.env.example`)
 | Var | Dùng ở đâu | Lưu ý |
 |-----|-----------|-------|
 | `PORT` | `index.ts` | Default 3000, project dùng 3300 |
-| `DB_*` | `db/connection.ts` | XAMPP: host=127.0.0.1, user=root, password rỗng |
+| `DB_*` | `db/connection.ts` | Kết nối MySQL (host, port, user, password, database) |
 | `META_APP_SECRET` | `webhooks/messenger.ts` | Verify HMAC signature (bỏ qua trong dev mode) |
 | `META_VERIFY_TOKEN` | Tất cả webhook GET | `my_custom_verify_token_123` |
 | `FB_PAGE_ACCESS_TOKEN` | `channels/index.ts` Messenger | Lấy từ Messenger API Settings dashboard, **không có hạn** nhưng bị thu hồi khi app thay đổi quyền |
@@ -210,7 +213,7 @@ File: `backend/.env` (dựa theo `backend/.env.example`)
 | `IG_PAGE_ACCESS_TOKEN` | `channels/index.ts` Instagram | Hết hạn sau **~60 ngày**, cần tạo lại định kỳ |
 | `IG_ACCOUNT_ID` | (không dùng trong channels/index.ts hiện tại) | ID Instagram Business Account |
 | `WA_PHONE_NUMBER_ID` | `channels/index.ts` WhatsApp | ID số điện thoại WA Business |
-| `WA_ACCESS_TOKEN` | `channels/index.ts` WhatsApp | Token tạm thời hết hạn sau **24h**; dùng System User Token từ business.facebook.com để có token vĩnh viễn |
+| `WA_ACCESS_TOKEN` | `channels/index.ts` WhatsApp | **System User Token — không hết hạn**. Xem hướng dẫn lấy bên dưới. |
 | `WEBHOOK_BASE_URL` | `index.ts` (chỉ log) | URL ngrok, cập nhật mỗi lần restart ngrok (free plan đổi URL) |
 
 ---
@@ -227,7 +230,9 @@ sendMessage(channel, toId, text, pageId?)
 - **Instagram**: `POST /{FB_PAGE_ID}/messages?access_token=IG_PAGE_ACCESS_TOKEN`
 - **WhatsApp**: `POST /{WA_PHONE_NUMBER_ID}/messages` với `Authorization: Bearer WA_ACCESS_TOKEN`
 
-Hàm có try/catch nội bộ — **không throw ra ngoài**. Lỗi chỉ log ra console. Nếu cần xử lý lỗi gửi tin, phải sửa để re-throw hoặc return kết quả.
+Hàm **throw** khi Axios lỗi (log trước rồi rethrow). Caller phải tự quyết định xử lý:
+- Agent reply (`api/conversations.ts`): lỗi được bubble lên, trả 500 cho frontend, **không** insert message.
+- Bot reply (`handlers/chatbot.ts`): có inner try/catch riêng — lỗi được log, message vẫn được insert với `status='failed'`.
 
 ---
 
@@ -237,9 +242,27 @@ Hàm có try/catch nội bộ — **không throw ra ngoài**. Lỗi chỉ log ra
 |------|-------|----------|-------------|
 | Messenger | Page Access Token | Không hết (trừ khi thu hồi) | Messenger API Settings → Tạo mã truy cập |
 | Instagram | IG Page Access Token | ~60 ngày | Instagram API Settings → Tạo mã truy cập |
-| WhatsApp | Bearer Token | 24 giờ | WhatsApp API Setup → Tạo mã truy cập; hoặc dùng System User Token (vĩnh viễn) |
+| WhatsApp | System User Token | **Không hết hạn** | Xem hướng dẫn bên dưới |
 
 Dấu hiệu token hết hạn: log `❌ Send failed` với error code `190` (token expired) hoặc `100/33` (object not found / invalid token context).
+
+### Lấy WhatsApp System User Token (vĩnh viễn)
+
+> Làm một lần duy nhất, token không bao giờ hết hạn.
+
+1. Vào [business.facebook.com](https://business.facebook.com) → đăng nhập tài khoản quản lý trang
+2. **Cài đặt doanh nghiệp** (Business Settings) → **Người dùng** → **Người dùng hệ thống** (System Users)
+3. Nhấn **Thêm** → đặt tên bất kỳ (vd: `whatsapp-bot`) → chọn vai trò **Admin** → Tạo
+4. Chọn người dùng vừa tạo → nhấn **Thêm tài sản** (Add Assets)
+   - Chọn loại tài sản: **Tài khoản WhatsApp Business**
+   - Tick vào WA Business Account của bạn → bật **Toàn quyền kiểm soát** → Lưu
+5. Nhấn **Tạo token mới** (Generate New Token)
+   - Chọn **App** của bạn (app trong Meta Developer)
+   - Tick 2 quyền: `whatsapp_business_messaging` và `whatsapp_business_management`
+   - Nhấn Tạo token
+6. **Copy token ngay** (chỉ hiển thị 1 lần) → dán vào `WA_ACCESS_TOKEN` trong `backend/.env`
+
+Token này gắn với System User (không phải tài khoản cá nhân) nên không bị thu hồi khi đổi mật khẩu hay logout.
 
 ---
 
@@ -248,7 +271,7 @@ Dấu hiệu token hết hạn: log `❌ Send failed` với error code `190` (to
 | Kênh | Nhận webhook | Gửi reply | Ghi chú |
 |------|-------------|-----------|---------|
 | Messenger ✅ | Hoạt động | Hoạt động | App Development mode, chỉ tester có quyền |
-| WhatsApp ✅ | Hoạt động | Hoạt động | Token 24h, cần refresh thường xuyên |
+| WhatsApp ✅ | Hoạt động | Hoạt động | Đã dùng System User Token — không hết hạn |
 | Instagram ⚠️ | Hoạt động | Lỗi | IG Business account mới tạo bị Meta restrict; thử account cũ hơn |
 
 ---
@@ -258,8 +281,12 @@ Dấu hiệu token hết hạn: log `❌ Send failed` với error code `190` (to
 ### Backend
 - **Không dùng** `undefined` làm bind parameter MySQL — dùng `null`. MySQL2 throw khi gặp `undefined`.
 - Mọi DB operation dùng `pool` (connection pool), không tạo connection mới. Nếu cần transaction: `pool.getConnection()` → dùng xong `conn.release()` trong `finally`.
-- Webhook handlers luôn `res.sendStatus(200)` **trước** khi xử lý async (Meta yêu cầu response trong 20 giây, không chờ xử lý xong).
-- HMAC signature check (`x-hub-signature-256`) chỉ enforce khi `NODE_ENV !== 'development'`.
+- Webhook handlers luôn `res.sendStatus(200)` **trước** khi xử lý async (Meta yêu cầu response trong 20 giây). Sau khi trả 200, gọi `routeMessage(...).catch(...)` — **không dùng `await` trực tiếp** vì Express 4 không bắt unhandled rejection trong async handler.
+- HMAC signature check (`x-hub-signature-256`) dùng **`req.rawBody`** (Buffer được lưu bởi `verify` callback trong `express.json()`), không dùng `JSON.stringify(req.body)`. Chỉ enforce khi `NODE_ENV !== 'development'`.
+- `sendMessage()` **throw** khi lỗi. Agent reply: để lỗi bubble lên → trả 500. Bot reply: bọc riêng try/catch, insert message với `status='failed'`.
+- Sau khi gửi reply thành công (agent hoặc bot): luôn UPDATE `conversations.last_message` và `last_message_at`.
+- Mỗi khi thay đổi `conversations.status`: emit `notifyAgents('status_changed', { conversationId, status })`.
+- Duplicate webhook: kiểm tra `channel_msg_id` trước khi insert message. DB có UNIQUE KEY `uq_channel_msg_id` trên `messages.channel_msg_id`.
 - Khi thêm kênh mới: tạo file trong `webhooks/` và `channels/`, implement `normalizeX()`, mount vào `src/index.ts`, thêm case vào `sendMessage()` trong `channels/index.ts`.
 
 ### Frontend
@@ -268,6 +295,8 @@ Dấu hiệu token hết hạn: log `❌ Send failed` với error code `190` (to
 - Không dùng optimistic update cho outbound message — để socket event từ backend push về (tránh duplicate).
 - Khi API call thất bại: set `error` state để hiện banner đỏ, restore input nếu cần.
 - Tin nhắn outbound của bot: `is_bot = 1`, màu tím `#7c3aed`. Agent: `is_bot = 0`, màu indigo `#4f46e5`.
+- `openConversation()` dùng `selectedIdRef` để guard race condition — kiểm tra `selectedIdRef.current !== conv.id` sau khi await, bỏ qua response nếu user đã click sang conversation khác.
+- `new_message` socket event: đẩy conversation lên đầu danh sách (filter + unshift) để giữ đúng thứ tự `last_message_at DESC`.
 
 ---
 
@@ -280,6 +309,11 @@ Dấu hiệu token hết hạn: log `❌ Send failed` với error code `190` (to
 5. **ngrok.yml version**: File config ngrok phải là `version: "2"`, không phải `"3"` với ngrok v3.38+.
 6. **Instagram webhook cần Live mode**: App Development mode không nhận IG webhook từ user ngoài danh sách tester.
 7. **WhatsApp messages toggle**: Phải bật toggle `messages` trong phần "Trường webhook" — hay bị bỏ sót, là nguyên nhân không nhận được tin WA.
+8. **HMAC signature dùng raw bytes**: `express.json()` parse body trước webhook; HMAC phải tính từ `req.rawBody` (Buffer) được lưu qua `verify` callback, không phải `JSON.stringify(req.body)`.
+9. **Webhook async handler Express 4**: Sau `res.sendStatus(200)`, dùng `.catch()` thay vì `await` — Express 4 không bắt unhandled rejection từ async handler sau khi response đã gửi.
+10. **Duplicate webhook event**: Meta có thể gửi cùng 1 event nhiều lần. Kiểm tra `channel_msg_id` trước khi insert; DB có UNIQUE KEY để làm lưới chặn cuối. Nếu add constraint trên DB đã có data: `ALTER TABLE messages ADD UNIQUE KEY uq_channel_msg_id (channel_msg_id);`
+11. **Sidebar order lệch**: Socket `new_message` phải đẩy conversation lên đầu mảng (không sửa in-place) để giữ đúng thứ tự sort của backend.
+12. **Race condition openConversation**: Click nhanh A→B có thể load message của A vào khung B. Guard bằng `selectedIdRef` — bỏ qua response nếu `selectedIdRef.current !== conv.id`.
 
 ---
 

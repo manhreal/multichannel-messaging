@@ -24,6 +24,6 @@ whatsappRouter.post('/', async (req: Request, res: Response) => {
   const message = normalizeWhatsApp(req.body);
   if (message) {
     console.log(`📱 WhatsApp [${message.channelUserId}]: ${message.content || '[' + message.type + ']'}`);
-    await routeMessage(message);
+    routeMessage(message).catch(err => console.error('WhatsApp routing error:', err));
   }
 });

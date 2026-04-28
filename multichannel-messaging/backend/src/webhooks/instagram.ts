@@ -22,6 +22,6 @@ instagramRouter.post('/', async (req: Request, res: Response) => {
   const message = normalizeInstagram(req.body);
   if (message) {
     console.log(`📸 Instagram [${message.channelUserId}]: ${message.content || '[' + message.type + ']'}`);
-    await routeMessage(message);
+    routeMessage(message).catch(err => console.error('Instagram routing error:', err));
   }
 });

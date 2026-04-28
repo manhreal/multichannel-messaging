@@ -38,5 +38,6 @@ export async function sendMessage(
     console.log(`✅ Sent [${channel}] → ${toId}`);
   } catch (err: any) {
     console.error(`❌ Send failed [${channel}]:`, err.response?.data || err.message);
+    throw err;
   }
 }

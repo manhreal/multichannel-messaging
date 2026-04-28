@@ -53,9 +53,13 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
   FOREIGN KEY (sent_by_agent_id) REFERENCES agents(id) ON DELETE SET NULL,
+  UNIQUE KEY uq_channel_msg_id (channel_msg_id),
   INDEX idx_conversation (conversation_id),
   INDEX idx_created_at (created_at)
 );
+
+-- Cho DB đã tồn tại trước khi thêm constraint này, chạy lệnh sau một lần:
+-- ALTER TABLE messages ADD UNIQUE KEY uq_channel_msg_id (channel_msg_id);
 
 -- Bảng bot_rules (luật chatbot tự động trả lời)
 CREATE TABLE IF NOT EXISTS bot_rules (

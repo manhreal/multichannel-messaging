@@ -32,6 +32,17 @@ export async function routeMessage(msg: UnifiedMessage) {
       );
     }
 
+    if (msg.channelMsgId) {
+      const [dupes]: any = await conn.execute(
+        `SELECT id FROM messages WHERE channel_msg_id = ? LIMIT 1`,
+        [msg.channelMsgId]
+      );
+      if ((dupes as any[]).length > 0) {
+        console.warn(`⚠️ Duplicate webhook event ignored: ${msg.channelMsgId}`);
+        return;
+      }
+    }
+
     await conn.execute(
       `INSERT INTO messages
        (conversation_id, channel_msg_id, direction, type, content, media_url, sender_id, sender_name)

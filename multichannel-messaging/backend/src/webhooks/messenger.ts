@@ -20,9 +20,10 @@ messengerRouter.get('/', (req: Request, res: Response) => {
 
 messengerRouter.post('/', async (req: Request, res: Response) => {
   const sig         = req.headers['x-hub-signature-256'] as string;
+  const rawBody     = (req as any).rawBody as Buffer | undefined;
   const expectedSig = 'sha256=' + crypto
     .createHmac('sha256', process.env.META_APP_SECRET!)
-    .update(JSON.stringify(req.body))
+    .update(rawBody ?? Buffer.from(JSON.stringify(req.body)))
     .digest('hex');
 
   if (process.env.NODE_ENV !== 'development' && sig !== expectedSig) {
@@ -34,6 +35,6 @@ messengerRouter.post('/', async (req: Request, res: Response) => {
   const message = normalizeMessenger(req.body);
   if (message) {
     console.log(`📨 Messenger [${message.channelUserId}]: ${message.content || '[' + message.type + ']'}`);
-    await routeMessage(message);
+    routeMessage(message).catch(err => console.error('Messenger routing error:', err));
   }
 });

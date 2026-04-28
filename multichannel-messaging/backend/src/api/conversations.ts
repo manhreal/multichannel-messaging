@@ -45,14 +45,24 @@ conversationsRouter.post('/:id/reply', async (req, res) => {
 
     await sendMessage(conv.channel, conv.channel_user_id, text, conv.page_id);
 
+    const newStatus = conv.status === 'resolved' ? 'resolved' : 'assigned';
+    await pool.execute(
+      `UPDATE conversations SET last_message = ?, last_message_at = NOW(), status = ? WHERE id = ?`,
+      [text, newStatus, conv.id]
+    );
+
     await pool.execute(
       `INSERT INTO messages (conversation_id, direction, type, content, sent_by_agent_id)
        VALUES (?, 'outbound', 'text', ?, ?)`,
       [conv.id, text, agentId || null]
     );
 
-    const replyMsg = { direction: 'outbound', type: 'text', content: text, created_at: new Date() };
-    notifyAgents('new_message', { conversation: conv, message: replyMsg });
+    const updatedConv = { ...conv, last_message: text, last_message_at: new Date(), status: newStatus };
+    const replyMsg    = { direction: 'outbound', type: 'text', content: text, is_bot: 0, created_at: new Date() };
+    notifyAgents('new_message', { conversation: updatedConv, message: replyMsg });
+    if (conv.status !== newStatus) {
+      notifyAgents('status_changed', { conversationId: conv.id, status: newStatus });
+    }
 
     res.json({ success: true });
   } catch (e: any) {
@@ -66,6 +76,7 @@ conversationsRouter.patch('/:id/assign', async (req, res) => {
     `UPDATE conversations SET assigned_agent_id = ?, status = 'assigned' WHERE id = ?`,
     [agentId, req.params.id]
   );
+  notifyAgents('status_changed', { conversationId: req.params.id, status: 'assigned' });
   res.json({ success: true });
 });
 
@@ -75,5 +86,6 @@ conversationsRouter.patch('/:id/status', async (req, res) => {
     `UPDATE conversations SET status = ? WHERE id = ?`,
     [status, req.params.id]
   );
+  notifyAgents('status_changed', { conversationId: req.params.id, status });
   res.json({ success: true });
 });

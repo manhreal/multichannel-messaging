@@ -48,18 +48,20 @@ export default function App() {
   const [loadingConv, setLoadingConv]     = useState(false);
   const [error, setError]                 = useState('');
   const [channelFilter, setChannelFilter] = useState<string>('all');
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef    = useRef<HTMLDivElement>(null);
+  const selectedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     fetchConversations();
 
     socket.on('new_message', (data: any) => {
       setConversations(prev => {
-        const idx = prev.findIndex(c => c.id === data.conversation.id);
-        if (idx === -1) return [{ ...data.conversation, last_message: data.message.content }, ...prev];
-        const next = [...prev];
-        next[idx] = { ...next[idx], last_message: data.message.content, last_message_at: new Date() };
-        return next;
+        const idx     = prev.findIndex(c => c.id === data.conversation.id);
+        const updated = idx === -1
+          ? { ...data.conversation, last_message: data.message.content, last_message_at: new Date().toISOString() }
+          : { ...prev[idx], last_message: data.message.content, last_message_at: new Date().toISOString() };
+        const rest = prev.filter((_, i) => i !== idx);
+        return [updated, ...rest];
       });
       setSelected((sel: any) => {
         if (sel?.id === data.conversation.id) {
@@ -98,21 +100,25 @@ export default function App() {
   }
 
   async function openConversation(conv: any) {
+    selectedIdRef.current = conv.id;
     setSelected(conv);
     setMessages([]);
     setError('');
     setLoadingConv(true);
     try {
       const { data } = await axios.get(`${API}/conversations/${conv.id}/messages`);
+      if (selectedIdRef.current !== conv.id) return;
       setMessages(data);
     } catch (err: any) {
+      if (selectedIdRef.current !== conv.id) return;
       setError(err.response?.data?.error || err.message || 'Không tải được tin nhắn');
     } finally {
-      setLoadingConv(false);
+      if (selectedIdRef.current === conv.id) setLoadingConv(false);
     }
   }
 
   function closeConversation() {
+    selectedIdRef.current = null;
     setSelected(null);
     setMessages([]);
     setError('');
