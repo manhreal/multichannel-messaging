@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 
-const API    = 'http://localhost:3300/api';
-const socket = io('http://localhost:3300');
+const API    = import.meta.env.VITE_API_URL as string;
+const socket = io(import.meta.env.VITE_SOCKET_URL as string);
 if (import.meta.hot) {
   import.meta.hot.dispose(() => socket.disconnect());
 }
