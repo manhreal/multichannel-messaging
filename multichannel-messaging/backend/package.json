@@ -1,0 +1,25 @@
+{
+  "name": "multichannel-messaging-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "redis": "^4.6.7",
+    "socket.io": "^4.7.2",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "tsx": "^3.14.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.8.0",
+    "@types/cors": "^2.8.14"
+  }
+}
