@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'meta-backend',
-      cwd: './backend',
+      cwd: '.',
       script: 'src/index.ts',
       interpreter: 'node_modules/.bin/tsx',
       instances: 1,
