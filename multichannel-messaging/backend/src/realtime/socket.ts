@@ -6,7 +6,7 @@ let io: Server;
 export function initSocket(server: HttpServer) {
   io = new Server(server, {
     cors: {
-      origin:  ['http://localhost:3301', 'http://localhost:3001'],
+      origin:  ['http://localhost:3301', 'http://localhost:3001', 'https://meta.toanplus.com'],
       methods: ['GET', 'POST']
     }
   });
