@@ -3,8 +3,8 @@ module.exports = {
     {
       name: 'meta-backend',
       cwd: './backend',
-      script: 'dist/index.js',
-      interpreter: 'node',
+      script: 'src/index.ts',
+      interpreter: 'node_modules/.bin/tsx',
       instances: 1,
       autorestart: true,
       watch: false,
