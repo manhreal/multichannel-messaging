@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { X, Send, Loader2 } from 'lucide-react';
 
 const API    = import.meta.env.VITE_API_URL as string;
 const socket = io(import.meta.env.VITE_SOCKET_URL as string);
@@ -8,11 +9,11 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => socket.disconnect());
 }
 
-const ICON: Record<string, string> = {
-  messenger: '💬', instagram: '📸', whatsapp: '📱'
+const CHANNEL_COLOR: Record<string, string> = {
+  messenger: '#0080FF', instagram: '#E1306C', whatsapp: '#25D366'
 };
 const CHANNEL_LABEL: Record<string, string> = {
-  messenger: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp'
+  messenger: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp'
 };
 const STATUS_COLOR: Record<string, string> = {
   bot: '#f59e0b', open: '#3b82f6', assigned: '#10b981', resolved: '#6b7280'
@@ -21,12 +22,19 @@ const STATUS_LABEL: Record<string, string> = {
   bot: 'Bot', open: 'Open', assigned: 'Assigned', resolved: 'Resolved'
 };
 
+const FILTER_TABS = [
+  { key: 'all',       label: 'Tất cả'   },
+  { key: 'messenger', label: 'Facebook'  },
+  { key: 'instagram', label: 'Instagram' },
+  { key: 'whatsapp',  label: 'WhatsApp'  },
+];
+
 function formatTime(d: string | Date) {
   const date = new Date(d);
-  const now  = new Date();
-  const diff = now.getTime() - date.getTime();
-  if (diff < 60_000)  return 'vừa xong';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}p`;
+  const now   = new Date();
+  const diff  = now.getTime() - date.getTime();
+  if (diff < 60_000)    return 'vừa xong';
+  if (diff < 3600_000)  return `${Math.floor(diff / 60_000)}p`;
   if (diff < 86400_000) return date.toLocaleTimeString('vi', { hour: '2-digit', minute: '2-digit' });
   return date.toLocaleDateString('vi', { day: '2-digit', month: '2-digit' });
 }
@@ -37,6 +45,7 @@ export default function App() {
   const [messages, setMessages]           = useState<any[]>([]);
   const [reply, setReply]                 = useState('');
   const [loading, setLoading]             = useState(false);
+  const [loadingConv, setLoadingConv]     = useState(false);
   const [error, setError]                 = useState('');
   const [channelFilter, setChannelFilter] = useState<string>('all');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -68,15 +77,33 @@ export default function App() {
   }, [messages]);
 
   async function fetchConversations() {
-    const { data } = await axios.get(`${API}/conversations`);
-    setConversations(data);
+    try {
+      const { data } = await axios.get(`${API}/conversations`);
+      setConversations(data);
+    } catch {
+      // silent
+    }
   }
 
   async function openConversation(conv: any) {
     setSelected(conv);
+    setMessages([]);
     setError('');
-    const { data } = await axios.get(`${API}/conversations/${conv.id}/messages`);
-    setMessages(data);
+    setLoadingConv(true);
+    try {
+      const { data } = await axios.get(`${API}/conversations/${conv.id}/messages`);
+      setMessages(data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Không tải được tin nhắn');
+    } finally {
+      setLoadingConv(false);
+    }
+  }
+
+  function closeConversation() {
+    setSelected(null);
+    setMessages([]);
+    setError('');
   }
 
   async function sendReply() {
@@ -87,10 +114,8 @@ export default function App() {
     setReply('');
     try {
       await axios.post(`${API}/conversations/${selected.id}/reply`, { text: textToSend });
-      // socket event từ backend sẽ push message vào UI, không add ở đây tránh duplicate
     } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Gửi thất bại';
-      setError(msg);
+      setError(err.response?.data?.error || err.message || 'Gửi thất bại');
       setReply(textToSend);
     } finally {
       setLoading(false);
@@ -117,9 +142,7 @@ export default function App() {
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontWeight: 700, fontSize: 16, color: '#1e293b' }}>
-              📥 Inbox
-            </span>
+            <span style={{ fontWeight: 700, fontSize: 16, color: '#1e293b' }}>Inbox</span>
             <span style={{ fontSize: 12, background: '#4f46e5', color: '#fff', borderRadius: 10, padding: '2px 8px' }}>
               {conversations.length}
             </span>
@@ -127,19 +150,19 @@ export default function App() {
 
           {/* Channel filter tabs */}
           <div style={{ display: 'flex', gap: 4 }}>
-            {['all', 'messenger', 'instagram', 'whatsapp'].map(ch => (
+            {FILTER_TABS.map(tab => (
               <button
-                key={ch}
-                onClick={() => setChannelFilter(ch)}
+                key={tab.key}
+                onClick={() => setChannelFilter(tab.key)}
                 style={{
-                  flex: 1, padding: '4px 0', fontSize: 11, border: 'none',
-                  borderRadius: 6, cursor: 'pointer', fontWeight: 500,
-                  background: channelFilter === ch ? '#4f46e5' : '#f1f5f9',
-                  color:      channelFilter === ch ? '#fff'    : '#64748b',
+                  flex: 1, padding: '5px 0', fontSize: 10, border: 'none',
+                  borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                  background: channelFilter === tab.key ? '#4f46e5' : '#f1f5f9',
+                  color:      channelFilter === tab.key ? '#fff'    : '#64748b',
                   transition: 'all 0.15s'
                 }}
               >
-                {ch === 'all' ? 'All' : ICON[ch]}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -164,8 +187,10 @@ export default function App() {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                <span style={{ fontWeight: 600, fontSize: 13, color: '#1e293b' }}>
-                  {ICON[c.channel]} {c.channel_name || c.channel_user_id}
+                <span style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {/* colored dot for channel */}
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: CHANNEL_COLOR[c.channel] || '#94a3b8', flexShrink: 0, display: 'inline-block' }} />
+                  {c.channel_name || c.channel_user_id}
                 </span>
                 <span style={{ fontSize: 10, color: '#94a3b8' }}>
                   {c.last_message_at ? formatTime(c.last_message_at) : ''}
@@ -196,12 +221,11 @@ export default function App() {
               padding: '12px 24px', background: '#fff', borderBottom: '1px solid #e2e8f0',
               display: 'flex', alignItems: 'center', gap: 12
             }}>
-              <span style={{ fontSize: 28 }}>{ICON[selected.channel]}</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 15 }}>
                   {selected.channel_name || selected.channel_user_id}
                 </div>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, color: CHANNEL_COLOR[selected.channel] || '#94a3b8', fontWeight: 600 }}>
                   {CHANNEL_LABEL[selected.channel]}
                 </div>
               </div>
@@ -231,11 +255,28 @@ export default function App() {
               }}>
                 {STATUS_LABEL[selected.status] || selected.status}
               </span>
+
+              <button
+                onClick={closeConversation}
+                title="Đóng"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#94a3b8', display: 'flex', alignItems: 'center', padding: 4,
+                  borderRadius: 6
+                }}
+              >
+                <X size={18} />
+              </button>
             </div>
 
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-              {messages.map((m: any, i: number) => (
+              {loadingConv && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 32, color: '#94a3b8' }}>
+                  <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+                </div>
+              )}
+              {!loadingConv && messages.map((m: any, i: number) => (
                 <div
                   key={i}
                   style={{
@@ -255,7 +296,7 @@ export default function App() {
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
                   }}>
                     {!!m.is_bot && (
-                      <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 2 }}>🤖 Bot</div>
+                      <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 2 }}>Bot</div>
                     )}
                     {m.type === 'image' && m.media_url ? (
                       <img src={m.media_url} alt="img" style={{ maxWidth: 220, borderRadius: 8, display: 'block' }} />
@@ -279,8 +320,10 @@ export default function App() {
                 borderRadius: 8, fontSize: 13, color: '#b91c1c',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
               }}>
-                <span>⚠️ {error}</span>
-                <button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', fontSize: 16 }}>×</button>
+                <span>{error}</span>
+                <button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', display: 'flex' }}>
+                  <X size={16} />
+                </button>
               </div>
             )}
 
@@ -306,14 +349,18 @@ export default function App() {
                   onClick={sendReply}
                   disabled={loading || !reply.trim()}
                   style={{
-                    padding: '10px 22px',
+                    padding: '10px 18px',
                     background: (loading || !reply.trim()) ? '#a5b4fc' : '#4f46e5',
                     color: '#fff', border: 'none', borderRadius: 24,
                     cursor: (loading || !reply.trim()) ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 6,
                     fontSize: 14, fontWeight: 600, transition: 'background 0.15s'
                   }}
                 >
-                  {loading ? '...' : 'Gửi'}
+                  {loading
+                    ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    : <Send size={16} />}
+                  {loading ? '' : 'Gửi'}
                 </button>
               </div>
             )}
@@ -323,10 +370,13 @@ export default function App() {
                 padding: '12px 24px', background: '#f8fafc', borderTop: '1px solid #e2e8f0',
                 textAlign: 'center', fontSize: 13, color: '#94a3b8'
               }}>
-                Hội thoại đã resolved · <button
+                Hội thoại đã resolved ·{' '}
+                <button
                   onClick={() => changeStatus('open')}
                   style={{ background: 'none', border: 'none', color: '#4f46e5', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-                >Mở lại</button>
+                >
+                  Mở lại
+                </button>
               </div>
             )}
           </>
@@ -335,12 +385,13 @@ export default function App() {
             flex: 1, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', color: '#94a3b8'
           }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>💬</div>
             <div style={{ fontSize: 16, marginBottom: 8, color: '#64748b' }}>Chọn một hội thoại</div>
             <div style={{ fontSize: 13 }}>Hoặc test: <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>POST /test/simulate</code></div>
           </div>
         )}
       </div>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
